@@ -9,9 +9,6 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
-    <!-- Esri Leaflet for ArcGIS services -->
-    <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
-    
     <style>
         body {
             margin: 0;
@@ -34,7 +31,7 @@
             border-radius: 8px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
             z-index: 1000;
-            max-width: 300px;
+            max-width: 320px;
             font-size: 14px;
         }
         
@@ -73,44 +70,9 @@
             background: #45a049;
         }
         
-        .btn:disabled {
-            background: #cccccc;
-            cursor: not-allowed;
-        }
-        
         .btn.active {
             background: #2E7D32;
-        }
-        
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(255,255,255,0.9);
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            z-index: 2000;
-            display: none;
-        }
-        
-        .popup-content {
-            max-width: 320px;
-        }
-        
-        .popup-content h4 {
-            margin: 0 0 10px 0;
-            color: #2d5a2d;
-        }
-        
-        .popup-content .info-row {
-            margin: 5px 0;
-        }
-        
-        .popup-content .info-label {
             font-weight: bold;
-            color: #666;
         }
         
         .status {
@@ -155,12 +117,22 @@
             border-radius: 50%;
         }
         
-        .user-location-marker {
-            background: none !important;
-            border: none !important;
-            font-size: 20px;
-            text-align: center;
-            line-height: 20px;
+        .popup-content {
+            max-width: 320px;
+        }
+        
+        .popup-content h4 {
+            margin: 0 0 10px 0;
+            color: #2d5a2d;
+        }
+        
+        .popup-content .info-row {
+            margin: 5px 0;
+        }
+        
+        .popup-content .info-label {
+            font-weight: bold;
+            color: #666;
         }
     </style>
 </head>
@@ -172,23 +144,18 @@
         <p>Click on any Crown land marker to see details and get navigation directions.</p>
         <p><strong>Your Location:</strong> <span id="user-location">Click "Find My Location"</span></p>
         <p><strong>Closest Crown Land:</strong> <span id="closest-distance">Calculating...</span></p>
-        <p><strong>Data Mode:</strong> <span id="data-source">Sample Data</span></p>
-        <p><strong>Showing:</strong> <span id="filter-status">All Types</span></p>
+        <p><strong>Showing:</strong> <span id="filter-status">All Types (9 areas)</span></p>
     </div>
     
     <div class="controls">
         <button class="btn" onclick="findMyLocation()">📍 Find My Location</button>
-        <button class="btn" id="general-btn" onclick="showOnlyGeneralUse()">🎯 General Use Only</button>
-        <button class="btn active" id="all-btn" onclick="showAllCrownLand()">🗺️ Show All Types</button>
-        <button class="btn" onclick="loadVerifiedData()">✅ Reset Data</button>
-    </div>
-    
-    <div class="loading" id="loading">
-        <div>Loading Crown land data...</div>
+        <button class="btn" id="general-btn" onclick="showGeneralUseOnly()">🎯 General Use Only</button>
+        <button class="btn active" id="all-btn" onclick="showAllTypes()">🗺️ Show All Types</button>
+        <button class="btn" onclick="resetView()">🔄 Reset View</button>
     </div>
     
     <div class="status" id="status">
-        Ready to explore Crown land - Click markers for details
+        9 Crown land areas loaded - Click markers for details
     </div>
     
     <div class="legend">
@@ -216,139 +183,135 @@
     </div>
 
     <script>
+        console.log("🚀 Crown Land Explorer starting...");
+        
         // Initialize map centered on Ottawa
         const map = L.map('map').setView([45.4215, -75.6972], 9);
         
         // Global variables
         let userLocation = null;
         let userMarker = null;
-        let crownLandLayer = null;
-        let generalUseOnly = false;
-        let allCrownLandData = [];
+        let allMarkers = [];
+        let currentFilter = 'all';
         
-        // Add base map layers
-        const baseMaps = {
-            'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                attribution: '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-            }),
-            'Street Map': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }),
-            'Terrain': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-                attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanorams.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
-            })
-        };
+        // Add base map
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
         
-        // Set default base map
-        baseMaps['Street Map'].addTo(map);
-        
-        // Add layer control
-        L.control.layers(baseMaps).addTo(map);
-        
-        // Complete Crown land data including all types for demonstration
-        const allCrownLandAreas = [
-            // GENERAL USE AREAS (Green - Camping Allowed)
+        // Comprehensive Crown land data - all types
+        const crownLandData = [
+            // GENERAL USE AREAS - GREEN (Camping Allowed)
             {
                 name: "Area E - General Use",
                 lat: 45.1223,
                 lon: -76.0016,
-                designation: "General Use Area",
+                type: "General Use Area",
                 driveTime: 51,
                 area: 896,
-                activities: ["Camping (up to 21 days)", "Fishing with license", "Hunting with license", "Hiking", "Photography", "Canoeing/Kayaking"],
-                description: "Prime camping area southwest of Carleton Place. Well-established access roads."
+                camping: "Yes - up to 21 days",
+                activities: ["Camping", "Fishing", "Hunting", "Hiking", "Photography"],
+                description: "Prime camping area southwest of Carleton Place"
             },
             {
                 name: "Kemptville District Crown Lands",
                 lat: 44.8895,
                 lon: -75.5249,
-                designation: "General Use Area",
+                type: "General Use Area",
                 driveTime: 63,
                 area: 19719,
-                activities: ["Camping (up to 21 days)", "Fishing with license", "Hunting with license", "Hiking", "ATV use where permitted"],
-                description: "Large general use area southeast of Ottawa with multiple access points."
+                camping: "Yes - up to 21 days",
+                activities: ["Camping", "Fishing", "Hunting", "Hiking", "ATV use"],
+                description: "Large general use area with multiple access points"
             },
             {
-                name: "Area A - General Use",
+                name: "Mississippi Valley Crown Land",
                 lat: 45.1585,
                 lon: -76.4353,
-                designation: "General Use Area",
+                type: "General Use Area",
                 driveTime: 72,
-                area: 253239,
-                activities: ["Camping (up to 21 days)", "Fishing with license", "Hunting with license", "Hiking", "Remote wilderness access"],
-                description: "Massive wilderness area perfect for backcountry camping and hunting."
+                area: 25000,
+                camping: "Yes - up to 21 days",
+                activities: ["Camping", "Fishing", "Hunting", "Hiking", "Wilderness access"],
+                description: "Remote wilderness camping in Mississippi Valley"
             },
             {
-                name: "Area B - General Use",
+                name: "Rideau Lakes Crown Land",
                 lat: 44.9742,
                 lon: -76.2652,
-                designation: "General Use Area",
+                type: "General Use Area",
                 driveTime: 67,
-                area: 288978,
-                activities: ["Camping (up to 21 days)", "Fishing with license", "Hunting with license", "Hiking", "Wildlife viewing"],
-                description: "Large crown land area with excellent wildlife viewing opportunities."
+                area: 15000,
+                camping: "Yes - up to 21 days",
+                activities: ["Camping", "Fishing", "Hunting", "Hiking", "Wildlife viewing"],
+                description: "Crown land near Rideau Lakes system"
             },
             
-            // PROVINCIAL PARKS (Blue - No Camping Without Permits)
+            // PROVINCIAL PARKS - BLUE (Reservations Required)
             {
                 name: "Rideau River Provincial Park",
                 lat: 44.9167,
                 lon: -75.6833,
-                designation: "Provincial Park",
+                type: "Provincial Park",
                 driveTime: 45,
                 area: 1250,
-                activities: ["Day use only", "Hiking", "Canoeing", "Fishing with license", "Interpretive programs"],
-                description: "Established provincial park with facilities. Camping requires reservations."
+                camping: "Reservations required",
+                activities: ["Reserved camping", "Hiking", "Canoeing", "Interpretive programs"],
+                description: "Established park with facilities and programs"
             },
             {
                 name: "Murphy's Point Provincial Park",
                 lat: 44.7833,
                 lon: -76.2333,
-                designation: "Provincial Park", 
+                type: "Provincial Park",
                 driveTime: 85,
                 area: 1200,
-                activities: ["Camping (reservation required)", "Hiking trails", "Swimming", "Canoeing", "Heritage programs"],
-                description: "Historic provincial park on Big Rideau Lake with camping facilities."
+                camping: "Reservations required",
+                activities: ["Reserved camping", "Hiking", "Swimming", "Heritage programs"],
+                description: "Historic park on Big Rideau Lake"
             },
             
-            // CONSERVATION RESERVES (Orange - Limited Activities)
+            // CONSERVATION RESERVES - ORANGE (Day Use Only)
             {
                 name: "Limerick Forest Conservation Reserve",
                 lat: 45.1000,
                 lon: -76.1500,
-                designation: "Conservation Reserve",
+                type: "Conservation Reserve",
                 driveTime: 55,
                 area: 2800,
-                activities: ["Hiking", "Nature study", "Photography", "Research (permit required)", "No camping"],
-                description: "Protected forest ecosystem. Research and education focus."
+                camping: "No camping allowed",
+                activities: ["Hiking", "Nature study", "Photography", "Research"],
+                description: "Protected forest ecosystem for research and education"
             },
             {
                 name: "Marlborough Forest Conservation Reserve",
                 lat: 45.0500,
                 lon: -75.8000,
-                designation: "Conservation Reserve",
+                type: "Conservation Reserve",
                 driveTime: 40,
                 area: 1900,
-                activities: ["Hiking", "Bird watching", "Photography", "Educational programs", "No camping"],
-                description: "Large forest conservation area with hiking trails and wildlife habitat."
+                camping: "No camping allowed",
+                activities: ["Hiking", "Bird watching", "Photography", "Education"],
+                description: "Large forest conservation area with trails"
             },
             
-            // WILDLIFE AREAS (Purple - Hunting/Wildlife Focus)
+            // WILDLIFE MANAGEMENT AREA - PURPLE (Special Regulations)
             {
                 name: "Eastern Ontario Wildlife Management Area",
                 lat: 44.8500,
                 lon: -75.7000,
-                designation: "Provincial Wildlife Area",
+                type: "Provincial Wildlife Area",
                 driveTime: 50,
                 area: 3400,
-                activities: ["Hunting (in season)", "Wildlife viewing", "Hiking", "Photography", "Research"],
-                description: "Managed wildlife area with seasonal hunting opportunities and habitat conservation."
+                camping: "Check regulations",
+                activities: ["Hunting (in season)", "Wildlife viewing", "Photography"],
+                description: "Managed area for wildlife habitat and hunting"
             }
         ];
         
-        // Function to get color based on designation
-        function getCrownLandColor(designation) {
-            switch(designation) {
+        // Function to get color based on land type
+        function getColor(type) {
+            switch(type) {
                 case 'General Use Area': return '#4CAF50';
                 case 'Provincial Park': return '#2196F3';
                 case 'Conservation Reserve': return '#FF9800';
@@ -357,44 +320,14 @@
             }
         }
         
-        // Function to get activity restrictions
-        function getActivityInfo(designation) {
-            switch(designation) {
-                case 'General Use Area':
-                    return {
-                        icon: '🏕️',
-                        status: 'Camping Allowed',
-                        camping: 'Yes - up to 21 days',
-                        color: '#4CAF50'
-                    };
-                case 'Provincial Park':
-                    return {
-                        icon: '🏞️',
-                        status: 'Reservations Required',
-                        camping: 'Designated areas only',
-                        color: '#2196F3'
-                    };
-                case 'Conservation Reserve':
-                    return {
-                        icon: '🌳',
-                        status: 'Day Use Only',
-                        camping: 'No camping allowed',
-                        color: '#FF9800'
-                    };
-                case 'Provincial Wildlife Area':
-                    return {
-                        icon: '🦌',
-                        status: 'Wildlife Management',
-                        camping: 'Check regulations',
-                        color: '#9C27B0'
-                    };
-                default:
-                    return {
-                        icon: '📍',
-                        status: 'Check Regulations',
-                        camping: 'Unknown',
-                        color: '#F44336'
-                    };
+        // Function to get icon based on land type
+        function getIcon(type) {
+            switch(type) {
+                case 'General Use Area': return '🏕️';
+                case 'Provincial Park': return '🏞️';
+                case 'Conservation Reserve': return '🌳';
+                case 'Provincial Wildlife Area': return '🦌';
+                default: return '📍';
             }
         }
         
@@ -412,55 +345,46 @@
         
         // Function to create navigation links
         function createNavigationLinks(lat, lon) {
-            const googleMaps = `https://maps.google.com/?q=${lat},${lon}`;
-            const waze = `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`;
-            const appleMaps = `http://maps.apple.com/?ll=${lat},${lon}`;
-            
             return `
                 <div style="margin-top: 15px; border-top: 1px solid #ccc; padding-top: 10px;">
-                    <strong>🧭 Navigate with:</strong><br>
-                    <a href="${googleMaps}" target="_blank" style="color: #4285F4; text-decoration: none; display: block; margin: 3px 0;">📍 Google Maps</a>
-                    <a href="${waze}" target="_blank" style="color: #32C8FF; text-decoration: none; display: block; margin: 3px 0;">🚗 Waze</a>
-                    <a href="${appleMaps}" target="_blank" style="color: #007AFF; text-decoration: none; display: block; margin: 3px 0;">🍎 Apple Maps</a>
+                    <strong>🧭 Navigate:</strong><br>
+                    <a href="https://maps.google.com/?q=${lat},${lon}" target="_blank" style="color: #4285F4; text-decoration: none;">📍 Google Maps</a><br>
+                    <a href="https://waze.com/ul?ll=${lat},${lon}&navigate=yes" target="_blank" style="color: #32C8FF; text-decoration: none;">🚗 Waze</a><br>
+                    <a href="http://maps.apple.com/?ll=${lat},${lon}" target="_blank" style="color: #007AFF; text-decoration: none;">🍎 Apple Maps</a>
                 </div>
             `;
         }
         
-        // Function to create detailed popup content
-        function createPopupContent(area) {
-            const activityInfo = getActivityInfo(area.designation);
+        // Function to create popup content
+        function createPopup(area) {
+            const icon = getIcon(area.type);
+            const color = getColor(area.type);
             
             let distance = '';
             if (userLocation) {
-                const dist = calculateDistance(
-                    userLocation.lat, userLocation.lng,
-                    area.lat, area.lon
-                );
-                distance = `
-                    <div class="info-row">
-                        <span class="info-label">Distance from you:</span> ${dist.toFixed(1)} km
-                    </div>
-                `;
+                const dist = calculateDistance(userLocation.lat, userLocation.lng, area.lat, area.lon);
+                distance = `<div class="info-row"><span class="info-label">Distance from you:</span> ${dist.toFixed(1)} km</div>`;
             }
             
             return `
                 <div class="popup-content">
-                    <h4>${activityInfo.icon} ${area.name}</h4>
+                    <h4>${icon} ${area.name}</h4>
                     
-                    <div style="background: ${activityInfo.color}20; padding: 8px; border-radius: 4px; margin: 8px 0;">
-                        <strong style="color: ${activityInfo.color};">${activityInfo.status}</strong><br>
-                        <small>Camping: ${activityInfo.camping}</small>
+                    <div style="background: ${color}20; padding: 8px; border-radius: 4px; margin: 8px 0;">
+                        <strong style="color: ${color};">Camping: ${area.camping}</strong>
                     </div>
                     
                     <div class="info-row">
-                        <span class="info-label">Type:</span> ${area.designation}
+                        <span class="info-label">Type:</span> ${area.type}
                     </div>
                     
                     <div class="info-row">
                         <span class="info-label">Size:</span> ${area.area.toLocaleString()} hectares
                     </div>
                     
-                    ${area.driveTime ? `<div class="info-row"><span class="info-label">Drive Time:</span> ~${area.driveTime} minutes from Ottawa</div>` : ''}
+                    <div class="info-row">
+                        <span class="info-label">Drive Time:</span> ~${area.driveTime} minutes
+                    </div>
                     
                     <div class="info-row">
                         <span class="info-label">Coordinates:</span> ${area.lat}, ${area.lon}
@@ -475,116 +399,93 @@
                     
                     <div style="margin: 10px 0; font-size: 12px; color: #666;">
                         <strong>Activities:</strong><br>
-                        ${area.activities.map(activity => `• ${activity}`).join('<br>')}
+                        ${area.activities.map(act => `• ${act}`).join('<br>')}
                     </div>
                     
                     ${createNavigationLinks(area.lat, area.lon)}
-                    
-                    <div style="margin-top: 10px; font-size: 10px; color: #999; text-align: center;">
-                        Sample data for demonstration
-                    </div>
                 </div>
             `;
         }
         
-        // Function to load and display Crown land data
-        function loadVerifiedData() {
-            showLoading(true);
-            updateStatus('Loading Crown land data...');
+        // Function to create and add markers
+        function createMarkers(dataToShow = crownLandData) {
+            console.log(`Creating ${dataToShow.length} markers...`);
             
-            // Clear existing layer
-            if (crownLandLayer) {
-                map.removeLayer(crownLandLayer);
-            }
+            // Clear existing markers
+            allMarkers.forEach(marker => map.removeLayer(marker));
+            allMarkers = [];
             
-            // Store all data
-            allCrownLandData = allCrownLandAreas;
-            
-            // Filter data based on current filter
-            const filteredData = generalUseOnly 
-                ? allCrownLandData.filter(area => area.designation === 'General Use Area')
-                : allCrownLandData;
-            
-            // Create markers
-            const markers = [];
-            
-            filteredData.forEach(area => {
+            dataToShow.forEach((area, index) => {
+                console.log(`Creating marker ${index + 1}: ${area.name} (${area.type})`);
+                
                 const marker = L.circleMarker([area.lat, area.lon], {
                     radius: 10,
-                    fillColor: getCrownLandColor(area.designation),
+                    fillColor: getColor(area.type),
                     color: 'white',
                     weight: 2,
                     opacity: 1,
                     fillOpacity: 0.9
                 }).addTo(map);
                 
-                marker.bindPopup(createPopupContent(area), {
-                    maxWidth: 400,
-                    className: 'crown-land-popup'
+                marker.bindPopup(createPopup(area), { maxWidth: 400 });
+                
+                // Hover effects
+                marker.on('mouseover', function() {
+                    this.setStyle({ radius: 12, weight: 3 });
+                    updateStatus(`${area.name} - ${area.type}`);
                 });
                 
-                // Add hover effects
-                marker.on('mouseover', function(e) {
-                    this.setStyle({
-                        radius: 12,
-                        weight: 3
-                    });
-                    updateStatus(`Hovering: ${area.name}`);
+                marker.on('mouseout', function() {
+                    this.setStyle({ radius: 10, weight: 2 });
+                    updateStatus(`${dataToShow.length} areas loaded`);
                 });
                 
-                marker.on('mouseout', function(e) {
-                    this.setStyle({
-                        radius: 10,
-                        weight: 2
-                    });
-                    updateStatus(`${filteredData.length} areas loaded - Click markers for details`);
-                });
-                
-                markers.push(marker);
+                allMarkers.push(marker);
             });
             
-            crownLandLayer = L.layerGroup(markers);
-            
-            updateStatus(`${filteredData.length} Crown land areas loaded`);
-            updateFilterStatus();
-            updateClosestDistance();
-            showLoading(false);
+            console.log(`✅ Created ${allMarkers.length} markers`);
         }
         
-        // Function to update filter status and button states
-        function updateFilterStatus() {
+        // Function to show all types
+        function showAllTypes() {
+            console.log("Showing all types...");
+            currentFilter = 'all';
+            createMarkers(crownLandData);
+            updateButtons();
+            updateStatus(`All 9 Crown land areas loaded`);
+            document.getElementById('filter-status').textContent = 'All Types (9 areas)';
+        }
+        
+        // Function to show only General Use
+        function showGeneralUseOnly() {
+            console.log("Showing General Use only...");
+            currentFilter = 'general';
+            const generalUse = crownLandData.filter(area => area.type === 'General Use Area');
+            createMarkers(generalUse);
+            updateButtons();
+            updateStatus(`${generalUse.length} General Use areas loaded`);
+            document.getElementById('filter-status').textContent = `General Use Only (${generalUse.length} areas)`;
+        }
+        
+        // Function to update button states
+        function updateButtons() {
             const generalBtn = document.getElementById('general-btn');
             const allBtn = document.getElementById('all-btn');
             
-            if (generalUseOnly) {
+            generalBtn.classList.remove('active');
+            allBtn.classList.remove('active');
+            
+            if (currentFilter === 'general') {
                 generalBtn.classList.add('active');
-                allBtn.classList.remove('active');
-                document.getElementById('filter-status').textContent = 'General Use Only';
             } else {
-                generalBtn.classList.remove('active');
                 allBtn.classList.add('active');
-                document.getElementById('filter-status').textContent = 'All Types';
             }
-        }
-        
-        // Function to show only General Use areas
-        function showOnlyGeneralUse() {
-            generalUseOnly = true;
-            loadVerifiedData();
-            updateStatus('Showing General Use areas only (camping allowed)');
-        }
-        
-        // Function to show all Crown land types
-        function showAllCrownLand() {
-            generalUseOnly = false;
-            loadVerifiedData();
-            updateStatus('Showing all Crown land types');
         }
         
         // Function to find user location
         function findMyLocation() {
             if (!navigator.geolocation) {
-                alert('Geolocation is not supported by this browser.');
+                alert('Geolocation not supported');
                 return;
             }
             
@@ -597,12 +498,10 @@
                     
                     userLocation = { lat, lng };
                     
-                    // Remove existing user marker
                     if (userMarker) {
                         map.removeLayer(userMarker);
                     }
                     
-                    // Add user location marker
                     userMarker = L.circleMarker([lat, lng], {
                         radius: 8,
                         fillColor: '#FF0000',
@@ -613,78 +512,67 @@
                     }).addTo(map);
                     
                     userMarker.bindPopup(`
-                        <div>
-                            <h4>📍 Your Location</h4>
-                            <p><strong>Coordinates:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}</p>
-                            <p><strong>Accuracy:</strong> ±${Math.round(position.coords.accuracy)} meters</p>
-                        </div>
+                        <h4>📍 Your Location</h4>
+                        <p>Coordinates: ${lat.toFixed(4)}, ${lng.toFixed(4)}</p>
                     `);
                     
-                    // Update UI
                     document.getElementById('user-location').textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-                    updateStatus('Location found! Distances updated.');
-                    
-                    // Update closest distance
+                    updateStatus('Location found!');
                     updateClosestDistance();
                     
-                    // Center on user location
                     map.setView([lat, lng], 10);
                 },
                 (error) => {
-                    updateStatus('Location access denied or unavailable');
-                    alert('Cannot get your location. Please enable location services.');
+                    updateStatus('Location access denied');
+                    alert('Cannot get location');
                 }
             );
         }
         
         // Function to update closest distance
         function updateClosestDistance() {
-            if (!userLocation || !allCrownLandData.length) return;
+            if (!userLocation) return;
             
-            let closestDistance = Infinity;
-            let closestArea = null;
+            let closest = null;
+            let minDist = Infinity;
             
-            allCrownLandData.forEach(area => {
-                const distance = calculateDistance(
-                    userLocation.lat, userLocation.lng,
-                    area.lat, area.lon
-                );
-                
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestArea = area;
+            crownLandData.forEach(area => {
+                const dist = calculateDistance(userLocation.lat, userLocation.lng, area.lat, area.lon);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = area;
                 }
             });
             
-            if (closestArea) {
-                const activityInfo = getActivityInfo(closestArea.designation);
+            if (closest) {
                 document.getElementById('closest-distance').innerHTML = 
-                    `${closestDistance.toFixed(1)} km<br><small>${closestArea.name}</small><br><small style="color: ${activityInfo.color};">${activityInfo.status}</small>`;
+                    `${minDist.toFixed(1)} km<br><small>${closest.name}</small>`;
             }
         }
         
-        // Utility functions
-        function showLoading(show) {
-            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        // Function to reset view
+        function resetView() {
+            map.setView([45.4215, -75.6972], 9);
+            updateStatus('View reset to Ottawa region');
         }
         
+        // Utility function
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
+            console.log(`Status: ${message}`);
         }
         
-        // Initialize the application
+        // Initialize app
         document.addEventListener('DOMContentLoaded', function() {
-            // Load all Crown land data immediately
-            loadVerifiedData();
+            console.log("🚀 Initializing app...");
             
-            // Add scale control
+            // Load all data immediately
+            showAllTypes();
+            
+            // Add scale
             L.control.scale().addTo(map);
             
-            // Set initial status
-            setTimeout(() => {
-                updateStatus('Ready! Click "Find My Location" for GPS or markers for details');
-                document.getElementById('data-source').textContent = 'Sample data (all types)';
-            }, 1000);
+            console.log("✅ App initialized");
         });
         
     </script>
