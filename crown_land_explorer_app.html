@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ontario Crown Land Explorer</title>
+    
+    <!-- Leaflet CSS and JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Esri Leaflet for ArcGIS services -->
+    <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f8f0;
+        }
+        
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            z-index: 1000;
+            max-width: 300px;
+            font-size: 14px;
+        }
+        
+        .info-panel h3 {
+            margin-top: 0;
+            color: #2d5a2d;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+        
+        .btn {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        
+        .btn:hover {
+            background: #45a049;
+        }
+        
+        .btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255,255,255,0.9);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            z-index: 2000;
+            display: none;
+        }
+        
+        .popup-content {
+            max-width: 300px;
+        }
+        
+        .popup-content h4 {
+            margin: 0 0 10px 0;
+            color: #2d5a2d;
+        }
+        
+        .popup-content .info-row {
+            margin: 5px 0;
+        }
+        
+        .popup-content .info-label {
+            font-weight: bold;
+            color: #666;
+        }
+        
+        .navigate-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+            width: 100%;
+        }
+        
+        .navigate-btn:hover {
+            background: #1976D2;
+        }
+        
+        .status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.9);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 1000;
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            z-index: 1000;
+            font-size: 12px;
+        }
+        
+        .legend h4 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 3px 0;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <div class="info-panel">
+        <h3>🏞️ Ontario Crown Land Explorer</h3>
+        <p>Click on any Crown land parcel to see details and get navigation directions.</p>
+        <p><strong>Your Location:</strong> <span id="user-location">Detecting...</span></p>
+        <p><strong>Closest Crown Land:</strong> <span id="closest-distance">Calculating...</span></p>
+    </div>
+    
+    <div class="controls">
+        <button class="btn" onclick="findMyLocation()">📍 Find My Location</button>
+        <button class="btn" onclick="showOnlyGeneralUse()">🎯 General Use Only</button>
+        <button class="btn" onclick="showAllCrownLand()">🗺️ Show All</button>
+    </div>
+    
+    <div class="loading" id="loading">
+        <div>Loading Crown land data...</div>
+    </div>
+    
+    <div class="status" id="status">
+        Ready to explore Crown land
+    </div>
+    
+    <div class="legend">
+        <h4>Crown Land Types</h4>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #4CAF50;"></div>
+            <span>General Use Area</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #2196F3;"></div>
+            <span>Provincial Park</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #FF9800;"></div>
+            <span>Conservation Reserve</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #9C27B0;"></div>
+            <span>Wildlife Area</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #F44336;"></div>
+            <span>Other Crown Land</span>
+        </div>
+    </div>
+
+    <script>
+        // Initialize map centered on Ottawa
+        const map = L.map('map').setView([45.4215, -75.6972], 10);
+        
+        // Global variables
+        let userLocation = null;
+        let userMarker = null;
+        let crownLandLayer = null;
+        let generalUseOnly = false;
+        
+        // Add base map layers
+        const baseMaps = {
+            'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            }),
+            'Street Map': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }),
+            'Terrain': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanorams.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+            })
+        };
+        
+        // Set default base map
+        baseMaps['Street Map'].addTo(map);
+        
+        // Add layer control
+        L.control.layers(baseMaps).addTo(map);
+        
+        // Function to get color based on designation
+        function getCrownLandColor(designation) {
+            switch(designation) {
+                case 'General Use Area': return '#4CAF50';
+                case 'Provincial Park': return '#2196F3';
+                case 'Conservation Reserve': return '#FF9800';
+                case 'Provincial Wildlife Area': return '#9C27B0';
+                default: return '#F44336';
+            }
+        }
+        
+        // Function to get feature style
+        function getCrownLandStyle(feature) {
+            return {
+                fillColor: getCrownLandColor(feature.properties.DESIGNATION_ENG),
+                weight: 1,
+                opacity: 0.8,
+                color: 'white',
+                dashArray: '2',
+                fillOpacity: 0.6
+            };
+        }
+        
+        // Function to highlight feature on hover
+        function highlightFeature(e) {
+            const layer = e.target;
+            
+            layer.setStyle({
+                weight: 3,
+                color: '#666',
+                dashArray: '',
+                fillOpacity: 0.8
+            });
+            
+            if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                layer.bringToFront();
+            }
+            
+            updateStatus(`Hovering: ${layer.feature.properties.NAME_ENG || 'Crown Land Parcel'}`);
+        }
+        
+        // Function to reset highlight
+        function resetHighlight(e) {
+            crownLandLayer.resetStyle(e.target);
+            updateStatus('Ready to explore Crown land');
+        }
+        
+        // Function to calculate distance between two points
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+        
+        // Function to create navigation links
+        function createNavigationLinks(lat, lon) {
+            const googleMaps = `https://maps.google.com/?q=${lat},${lon}`;
+            const waze = `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`;
+            const appleMaps = `http://maps.apple.com/?ll=${lat},${lon}`;
+            
+            return `
+                <div style="margin-top: 10px;">
+                    <strong>Navigate:</strong><br>
+                    <a href="${googleMaps}" target="_blank" style="color: #4285F4;">📍 Google Maps</a><br>
+                    <a href="${waze}" target="_blank" style="color: #32C8FF;">🚗 Waze</a><br>
+                    <a href="${appleMaps}" target="_blank" style="color: #007AFF;">🍎 Apple Maps</a>
+                </div>
+            `;
+        }
+        
+        // Function to handle feature click
+        function clickFeature(e) {
+            const layer = e.target;
+            const props = layer.feature.properties;
+            const bounds = layer.getBounds();
+            const center = bounds.getCenter();
+            
+            let distance = '';
+            if (userLocation) {
+                const dist = calculateDistance(
+                    userLocation.lat, userLocation.lng,
+                    center.lat, center.lng
+                );
+                distance = `<div class="info-row"><span class="info-label">Distance from you:</span> ${dist.toFixed(1)} km</div>`;
+            }
+            
+            // Create comprehensive popup content
+            const popupContent = `
+                <div class="popup-content">
+                    <h4>🏞️ ${props.NAME_ENG || 'Crown Land Parcel'}</h4>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Type:</span> ${props.DESIGNATION_ENG || 'Unknown'}
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Category:</span> ${props.CATEGORY_ENG || 'N/A'}
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Area:</span> ${props.SYS_AREA ? (props.SYS_AREA * 1000).toFixed(0) + ' hectares' : 'N/A'}
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">AOU:</span> ${props.AOU_DESIGNATION || 'N/A'}
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Policy ID:</span> ${props.POLICY_IDENT || 'N/A'}
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Coordinates:</span> ${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}
+                    </div>
+                    
+                    ${distance}
+                    
+                    ${createNavigationLinks(center.lat, center.lng)}
+                    
+                    <div style="margin-top: 10px; font-size: 11px; color: #666;">
+                        <strong>Permitted Activities (General Use):</strong><br>
+                        • Camping (up to 21 days)<br>
+                        • Fishing & Hunting (with licenses)<br>
+                        • Hiking, Photography<br>
+                        • Canoeing, Kayaking<br>
+                        • Berry picking
+                    </div>
+                    
+                    <div style="margin-top: 8px; font-size: 10px; color: #999;">
+                        Click navigation links above to get directions
+                    </div>
+                </div>
+            `;
+            
+            layer.bindPopup(popupContent, {
+                maxWidth: 350,
+                className: 'crown-land-popup'
+            }).openPopup();
+        }
+        
+        // Function to bind events to each feature
+        function onEachFeature(feature, layer) {
+            layer.on({
+                mouseover: highlightFeature,
+                mouseout: resetHighlight,
+                click: clickFeature
+            });
+        }
+        
+        // Function to filter features
+        function featureFilter(feature) {
+            if (generalUseOnly) {
+                return feature.properties.DESIGNATION_ENG === 'General Use Area';
+            }
+            return true;
+        }
+        
+        // Function to load Crown land data
+        async function loadCrownLandData() {
+            showLoading(true);
+            updateStatus('Loading Crown land data...');
+            
+            try {
+                // Use the exact same service URL from our analysis
+                const serviceUrl = 'https://ws.lioservices.lrc.gov.on.ca/arcgis2/rest/services/LIO_OPEN_DATA/LIO_Open06/MapServer/5/query';
+                
+                // Create bounding box around Ottawa (100km radius)
+                const ottawaLat = 45.4215, ottawaLon = -75.6972;
+                const bufferDegrees = 1.0; // Approximately 100km
+                const bbox = `${ottawaLon - bufferDegrees},${ottawaLat - bufferDegrees},${ottawaLon + bufferDegrees},${ottawaLat + bufferDegrees}`;
+                
+                const params = new URLSearchParams({
+                    'where': '1=1',
+                    'outFields': '*',
+                    'geometry': bbox,
+                    'geometryType': 'esriGeometryEnvelope',
+                    'spatialRel': 'esriSpatialRelIntersects',
+                    'returnGeometry': 'true',
+                    'f': 'geojson',
+                    'resultRecordCount': 1000
+                });
+                
+                const response = await fetch(`${serviceUrl}?${params}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.features && data.features.length > 0) {
+                    // Remove existing layer if it exists
+                    if (crownLandLayer) {
+                        map.removeLayer(crownLandLayer);
+                    }
+                    
+                    // Add Crown land layer
+                    crownLandLayer = L.geoJSON(data, {
+                        style: getCrownLandStyle,
+                        onEachFeature: onEachFeature,
+                        filter: featureFilter
+                    }).addTo(map);
+                    
+                    updateStatus(`Loaded ${data.features.length} Crown land parcels`);
+                    
+                    // Update closest distance if user location is available
+                    if (userLocation) {
+                        updateClosestDistance();
+                    }
+                    
+                } else {
+                    updateStatus('No Crown land data found in this area');
+                }
+                
+            } catch (error) {
+                console.error('Error loading Crown land data:', error);
+                updateStatus(`Error loading data: ${error.message}`);
+                
+                // Show alternative message
+                const errorPopup = L.popup()
+                    .setLatLng([45.4215, -75.6972])
+                    .setContent(`
+                        <div style="padding: 10px;">
+                            <h4>⚠️ Data Loading Issue</h4>
+                            <p>Unable to load live Crown land data. This might be due to:</p>
+                            <ul style="margin: 10px 0; padding-left: 20px;">
+                                <li>Network connectivity</li>
+                                <li>Government server maintenance</li>
+                                <li>CORS restrictions</li>
+                            </ul>
+                            <p><strong>Manual coordinates for closest Crown land:</strong></p>
+                            <p>📍 <strong>45.1223, -76.0016</strong> (Area E - General Use)</p>
+                            <a href="https://maps.google.com/?q=45.1223,-76.0016" target="_blank">🗺️ Open in Google Maps</a>
+                        </div>
+                    `)
+                    .openOn(map);
+            }
+            
+            showLoading(false);
+        }
+        
+        // Function to find user location
+        function findMyLocation() {
+            if (!navigator.geolocation) {
+                alert('Geolocation is not supported by this browser.');
+                return;
+            }
+            
+            updateStatus('Getting your location...');
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    userLocation = { lat, lng };
+                    
+                    // Remove existing user marker
+                    if (userMarker) {
+                        map.removeLayer(userMarker);
+                    }
+                    
+                    // Add user location marker
+                    userMarker = L.marker([lat, lng], {
+                        icon: L.divIcon({
+                            className: 'user-location-marker',
+                            html: '📍',
+                            iconSize: [20, 20],
+                            iconAnchor: [10, 10]
+                        })
+                    }).addTo(map);
+                    
+                    userMarker.bindPopup(`
+                        <div>
+                            <h4>📍 Your Location</h4>
+                            <p>Coordinates: ${lat.toFixed(4)}, ${lng.toFixed(4)}</p>
+                            <p>Accuracy: ±${position.coords.accuracy} meters</p>
+                        </div>
+                    `);
+                    
+                    // Center map on user location
+                    map.setView([lat, lng], 12);
+                    
+                    // Update UI
+                    document.getElementById('user-location').textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                    updateStatus('Location found! Click on Crown land parcels for details.');
+                    
+                    // Update closest distance
+                    updateClosestDistance();
+                },
+                (error) => {
+                    let message;
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            message = 'Location access denied by user.';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            message = 'Location information unavailable.';
+                            break;
+                        case error.TIMEOUT:
+                            message = 'Location request timed out.';
+                            break;
+                        default:
+                            message = 'An unknown error occurred.';
+                            break;
+                    }
+                    updateStatus(`Location error: ${message}`);
+                    alert(`Cannot get your location: ${message}`);
+                }
+            );
+        }
+        
+        // Function to update closest distance
+        function updateClosestDistance() {
+            if (!userLocation || !crownLandLayer) return;
+            
+            let closestDistance = Infinity;
+            let closestParcel = null;
+            
+            crownLandLayer.eachLayer((layer) => {
+                const bounds = layer.getBounds();
+                const center = bounds.getCenter();
+                const distance = calculateDistance(
+                    userLocation.lat, userLocation.lng,
+                    center.lat, center.lng
+                );
+                
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestParcel = layer.feature.properties;
+                }
+            });
+            
+            if (closestParcel) {
+                document.getElementById('closest-distance').innerHTML = 
+                    `${closestDistance.toFixed(1)} km<br><small>${closestParcel.NAME_ENG || 'Crown Land'}</small>`;
+            }
+        }
+        
+        // Function to show only General Use areas
+        function showOnlyGeneralUse() {
+            generalUseOnly = true;
+            loadCrownLandData();
+            updateStatus('Showing General Use areas only');
+        }
+        
+        // Function to show all Crown land
+        function showAllCrownLand() {
+            generalUseOnly = false;
+            loadCrownLandData();
+            updateStatus('Showing all Crown land types');
+        }
+        
+        // Function to show/hide loading indicator
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+        
+        // Function to update status
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            // Try to get user location on startup
+            setTimeout(() => {
+                findMyLocation();
+            }, 1000);
+            
+            // Load Crown land data
+            loadCrownLandData();
+            
+            // Add scale control
+            L.control.scale().addTo(map);
+        });
+        
+        // Add CSS for user location marker
+        const style = document.createElement('style');
+        style.textContent = `
+            .user-location-marker {
+                background: none !important;
+                border: none !important;
+                font-size: 20px;
+                text-align: center;
+                line-height: 20px;
+            }
+        `;
+        document.head.appendChild(style);
+        
+    </script>
+</body>
+</html>
