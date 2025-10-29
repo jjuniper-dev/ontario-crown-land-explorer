@@ -129,23 +129,6 @@
             font-weight: bold;
             color: #666;
         }
-        
-        /* Custom marker styles */
-        .crown-land-marker {
-            background: none !important;
-            border: none !important;
-            font-size: 24px;
-            text-align: center;
-            line-height: 24px;
-        }
-        
-        .user-location-marker {
-            background: none !important;
-            border: none !important;
-            font-size: 20px;
-            text-align: center;
-            line-height: 20px;
-        }
     </style>
 </head>
 <body>
@@ -196,7 +179,7 @@
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
         
-        // Verified Crown land data from our analysis
+        // Verified Crown land data from our spatial analysis
         const crownLandAreas = [
             {
                 name: "Area E - General Use",
